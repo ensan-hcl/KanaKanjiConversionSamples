@@ -16,36 +16,24 @@ public struct Word: Hashable {
 
 class Node: Equatable {
     static func == (lhs: Node, rhs: Node) -> Bool {
-        return lhs.position == rhs.position && lhs.word == rhs.word
+        return lhs.word == rhs.word
     }
     
-    init(position: Int, word: Word, bestChild: Node) {
-        self.position = position
+    init(word: Word, bestChild: Node?) {
         self.word = word
         self.bestChild = bestChild
     }
-    
-    private init(position: Int, word: Word, bestChild: Node?) {
-        self.position = position
-        self.word = word
-        self.bestChild = bestChild
-    }
-
-    var position: Int
+    // ノードのもつ単語
     var word: Word
     // スコアを最大にするNode
     var bestChild: Node?
     // そのスコア
     var bestScore: Int = 0
     
-    static let BOS = Node(position: 0, word: Word(word: "", yomi: "", score: 0, posTag: 0), bestChild: nil)
+    static let BOS = Node(word: Word(word: "", yomi: "", score: 0, posTag: 0), bestChild: nil)
 }
 
-// 全探索で最適解を探索する
-public struct KanaKanjiConversionSimpleImplementation {
-    
-    public init() {}
-    
+public struct Dict {
     private let dictionaryDirectory = Bundle.module.resourceURL!.appendingPathComponent("Dictionary", isDirectory: true).absoluteURL
     
     private var dictionaryWords: [Character: [Word]] = [:]
@@ -122,6 +110,14 @@ public struct KanaKanjiConversionSimpleImplementation {
         return word.score
     }
 
+}
+
+// Viterbiアルゴリズムで最適解を探索する
+public struct KanaKanjiConversionSimpleImplementation {
+    public init() {}
+    
+    private var dictionary = Dict()
+    
     // Viterbiアルゴリズムを用いて、かな漢字変換を行う
     public mutating func convertToKanji(kana: [Character]) -> String {
         let kanaCharacters = Array(kana)
@@ -131,36 +127,33 @@ public struct KanaKanjiConversionSimpleImplementation {
 
         for i in 0 ..< n {
             for j in 1 ... n-i {
-                let yomi = String(kanaCharacters[i ..< i + j])
-                let candidates = getWordInDictionary(yomi: yomi)
-                for candidate in candidates {
-                    let cost = getScoreOfWord(word: candidate)
-                    let posTag = candidate.posTag
-
+                // 辞書を引く
+                let words = dictionary.getWordInDictionary(yomi: String(kanaCharacters[i ..< i + j]))
+                // それぞれの単語のノードを作成する
+                for word in words {
+                    // その単語までのnodeでスコアが最高のものを探す
                     var maxScore = Int.min
                     var bestPrevNode: Node?
-                    
                     for prevNode in nodes[i] {
-                        let prevScore = prevNode.bestScore + getScoreBetweenPosTag(tagLeft: prevNode.word.posTag, tagRight: posTag)
-                        
+                        let prevScore = prevNode.bestScore + dictionary.getScoreBetweenPosTag(tagLeft: prevNode.word.posTag, tagRight: word.posTag)
                         if prevScore > maxScore {
                             maxScore = prevScore
                             bestPrevNode = prevNode
                         }
                     }
-                    guard let bestPrevNode else {
-                        continue
+                    // 見つけたprevNodeを元に新しいnodeを追加する
+                    if let bestPrevNode {
+                        let newNode = Node(word: word, bestChild: bestPrevNode)
+                        newNode.bestScore = dictionary.getScoreOfWord(word: word) + maxScore
+                        nodes[i + j].append(newNode)
                     }
-                    let newNode = Node(position: i + j, word: candidate, bestChild: bestPrevNode)
-                    newNode.bestScore = cost + maxScore
-                    nodes[i + j].append(newNode)
                 }
             }
         }
 
         // 最終位置から遡って最適な経路を復元する
         var result = ""
-        if var currentNode = nodes[n].min(by: {$0.bestScore > $1.bestScore}) {
+        if var currentNode = nodes[n].max(by: {$0.bestScore < $1.bestScore}) {
             while currentNode != Node.BOS {
                 result = currentNode.word.word + result
                 currentNode = currentNode.bestChild!
@@ -171,3 +164,4 @@ public struct KanaKanjiConversionSimpleImplementation {
         }
     }
 }
+
